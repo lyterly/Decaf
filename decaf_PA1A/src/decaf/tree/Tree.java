@@ -281,6 +281,18 @@ public abstract class Tree {
     public static final int READLINEEXPR = READINTEXPR + 1;
     public static final int PRINT = READLINEEXPR + 1;
     
+    public static final int SCOPY = PRINT + 1;
+    public static final int VARIDENT = SCOPY + 1;
+    public static final int GUARD = VARIDENT + 1;
+    public static final int ARRAYCONSTANT = GUARD + 1;
+    public static final int ARRAYREPEAT = ARRAYCONSTANT + 1;
+    public static final int ARRAYCONCAT = ARRAYREPEAT + 1;
+    public static final int ACCESSRANGE = ARRAYCONCAT + 1;
+    public static final int ACCESSDEFAULT = ACCESSRANGE + 1;
+    public static final int ACCESSCOMP = ACCESSDEFAULT + 1;
+    public static final int FOREACHSTMT = ACCESSCOMP + 1;
+    
+    
     /**
      * Tags for Literal and TypeLiteral
      */
@@ -340,15 +352,20 @@ public abstract class Tree {
     	}
     }
 
+    /*
+     * Add sealed class definition. (New Feature)
+     */
     public static class ClassDef extends Tree {
     	
+    	public boolean sealed;
     	public String name;
     	public String parent;
     	public List<Tree> fields;
 
-        public ClassDef(String name, String parent, List<Tree> fields,
+        public ClassDef(boolean sealed, String name, String parent, List<Tree> fields,
     			Location loc) {
     		super(CLASSDEF, loc);
+    		this.sealed = sealed;
     		this.name = name;
     		this.parent = parent;
     		this.fields = fields;
@@ -361,6 +378,8 @@ public abstract class Tree {
         
     	@Override
     	public void printTo(IndentPrintWriter pw) {
+    		if (sealed)
+    			pw.print("sealed ");
     		pw.println("class " + name + " "
     				+ (parent != null ? parent : "<empty>"));
     		pw.incIndent();
@@ -698,6 +717,76 @@ public abstract class Tree {
     		}
     	}
     }
+    
+
+    /**
+     * An Object-copying statement. (New Feature)
+     */
+    public static class Scopy extends Tree {
+    	
+    	public String ident;
+    	public Expr expr;
+    	
+    	public Scopy(String ident, Expr expr, Location loc) {
+    		super(SCOPY, loc);
+    		this.ident = ident;
+    		this.expr = expr;
+    	}
+    	
+    	@Override
+    	public void accept(Visitor v) {
+    		v.visitScopy(this);
+    	}
+    	
+    	@Override
+    	public void printTo(IndentPrintWriter pw) {
+    		pw.println("scopy");
+    		pw.incIndent();
+    		pw.println(ident);
+    		if (expr != null)
+    			expr.printTo(pw);
+    		pw.decIndent();
+    	}
+    }
+    
+    /*
+     * An condition guard. (New Feature)
+     */
+    
+    public static class Guard extends Tree {
+    	public List<Expr> elist;
+    	public List<Tree> slist;
+    	public Expr expr;
+    	
+    	public Guard(List<Expr> elist, List<Tree> slist, Location loc) {
+    		super(GUARD, loc);
+    		this.elist = elist;
+    		this.slist = slist;
+    	}
+    	
+    	@Override
+    	public void accept(Visitor v) {
+    		v.visitGuard(this);
+    	}
+    	
+    	@Override
+    	public void printTo(IndentPrintWriter pw) {
+    		pw.println("guarded");
+    		pw.incIndent();
+    		if (elist.size() == 0) {
+    			pw.println("<empty>");
+    		} else {
+	    		for (int j = 0; j < elist.size(); j ++) {
+	    			pw.println("guard");
+	    			pw.incIndent();
+	    			elist.get(j).printTo(pw);
+	    			slist.get(j).printTo(pw);
+	    			pw.decIndent();
+	    		}
+    		}
+    		pw.decIndent();
+    	}
+    }
 
     public abstract static class Expr extends Tree {
 
@@ -881,6 +970,7 @@ public abstract class Tree {
 
     /**
       * A binary operation.
+      * Add array operation. (New Feature)
       */
     public static class Binary extends Expr {
 
@@ -947,6 +1037,12 @@ public abstract class Tree {
     			break;
     		case GE:
     			binaryOperatorPrintTo(pw, "geq");
+    			break;
+    		case ARRAYREPEAT:
+    			binaryOperatorPrintTo(pw, "array repeat");
+    			break;
+    		case ARRAYCONCAT:
+    			binaryOperatorPrintTo(pw, "array concat");
     			break;
     		}
     	}
@@ -1160,6 +1256,223 @@ public abstract class Tree {
     		}
     	}
     }
+    
+    /*
+     * Access by Range. (New Feature)
+     */
+    public static class AccessRange extends Expr {
+    	
+    	public Expr array;
+    	public Expr indexLeft;
+    	public Expr indexRight;
+
+        public AccessRange(Expr array, Expr indexLeft, Expr indexRight, Location loc) {
+            super(ACCESSRANGE, loc);
+    		this.array = array;
+    		this.indexLeft = indexLeft;
+    		this.indexRight = indexRight;
+        }
+
+    	@Override
+        public void accept(Visitor v) {
+            v.visitAccessRange(this);
+        }
+
+    	@Override
+    	public void printTo(IndentPrintWriter pw) {
+    		pw.println("arrref");
+    		pw.incIndent();
+    		array.printTo(pw);
+    		pw.println("range");
+    		pw.incIndent();
+    		indexLeft.printTo(pw);
+    		indexRight.printTo(pw);
+    		pw.decIndent();
+    		pw.decIndent();
+    	}
+    }
+    
+    /*
+     * Access with Default. (New Feature)
+     */
+    public static class AccessDefault extends Expr {
+    	
+    	public Expr array;
+    	public Expr index;
+    	public Expr defaultValue;
+
+        public AccessDefault(Expr array, Expr index, Expr defaultValue, Location loc) {
+            super(ACCESSDEFAULT, loc);
+    		this.array = array;
+    		this.index = index;
+    		this.defaultValue = defaultValue;
+        }
+
+    	@Override
+        public void accept(Visitor v) {
+            v.visitAccessDefault(this);
+        }
+
+    	@Override
+    	public void printTo(IndentPrintWriter pw) {
+    		pw.println("arrref");
+    		pw.incIndent();
+    		array.printTo(pw);
+    		index.printTo(pw);
+    		pw.println("default");
+    		pw.incIndent();
+    		defaultValue.printTo(pw);
+    		pw.decIndent();
+    		pw.decIndent();
+    	}
+    }
+    
+    /*
+     * Access with Comprehension. (New Feature)
+     */
+    public static class AccessComp extends Expr {
+    	
+    	public Expr expr;
+    	public String ident;
+    	public Expr array;
+    	public Expr condition;
+    	public boolean conditionTrue;
+
+        public AccessComp(Expr expr, String ident, Expr array, Location loc) {
+            super(ACCESSCOMP, loc);
+    		this.expr = expr;
+    		this.ident = ident;
+    		this.array = array;
+    		this.conditionTrue = true;
+        }
+        
+        public AccessComp(Expr expr, String ident, Expr array, Expr condition, Location loc) {
+            super(ACCESSCOMP, loc);
+    		this.expr = expr;
+    		this.ident = ident;
+    		this.array = array;
+    		this.condition = condition;
+    		this.conditionTrue = false;
+        }
+
+    	@Override
+        public void accept(Visitor v) {
+            v.visitAccessComp(this);
+        }
+
+    	@Override
+    	public void printTo(IndentPrintWriter pw) {
+    		pw.println("array comp");
+    		pw.incIndent();
+    		pw.println("varbind " + ident);
+    		array.printTo(pw);
+    		if (conditionTrue)
+    			pw.println("boolconst true");
+    		else
+    			condition.printTo(pw);
+    		expr.printTo(pw);
+    		pw.decIndent();
+    	}
+    }
+    
+    /*
+     * An identifier following VAR. (New Feature)
+     */
+    public static class VarIdent extends LValue {
+
+    	public String name;
+
+        public VarIdent(String name, Location loc) {
+            super(VARIDENT, loc);
+    		this.name = name;
+        }
+
+    	@Override
+        public void accept(Visitor v) {
+            v.visitVarIdent(this);
+        }
+
+    	@Override
+    	public void printTo(IndentPrintWriter pw) {
+    		pw.println("var " + name);
+    	}
+    }
+    
+    /*
+     * Array of Constant. (New Feature)
+     */
+    public static class ArrayConstant extends Expr {
+
+    	public List<Tree> slist;
+
+        public ArrayConstant(List<Tree> slist, Location loc) {
+            super(ARRAYCONSTANT, loc);
+    		this.slist = slist;
+        }
+
+    	@Override
+        public void accept(Visitor v) {
+            v.visitArrayConstant(this);
+        }
+
+    	@Override
+    	public void printTo(IndentPrintWriter pw) {
+    		pw.println("array const");
+    		pw.incIndent();
+    		if (slist.size() == 0)
+    			pw.println("<empty>");
+    		else {
+    			for (Tree s : slist)
+    				s.printTo(pw);
+    		}
+    		pw.decIndent();
+    	}
+    }
+    
+    /*
+     * FOREACH. (New Feature)
+     */
+    public static class ForeachStmt extends Tree {
+    	
+    	public TypeLiteral type;
+    	public String ident;
+    	public Expr array;
+    	public Expr condition;
+    	public Tree stmt;
+    	
+    	public ForeachStmt(TypeLiteral type, String ident, Expr array, Expr condition, Tree stmt, Location loc) {
+    		super(FOREACHSTMT, loc);
+    		this.type = type;
+    		this.ident = ident;
+    		this.array = array;
+    		this.condition = condition;
+    		this.stmt = stmt;
+    	}
+    	
+    	@Override
+        public void accept(Visitor v) {
+            v.visitForeachStmt(this);
+        }
+        
+    	@Override
+    	public void printTo(IndentPrintWriter pw) {
+    		pw.println("foreach");
+    		pw.incIndent();
+    		pw.print("varbind " + ident + " ");
+    		if (type != null)
+    			type.printTo(pw);
+    		else
+    			pw.print("var");
+    		pw.println("");
+    		array.printTo(pw);
+    		if (condition != null)
+    			condition.printTo(pw);
+    		else
+    			pw.println("boolconst true");
+    		stmt.printTo(pw);
+    		pw.decIndent();
+    	}
+    }
 
     /**
       * A constant value given literally.
@@ -1299,7 +1612,7 @@ public abstract class Tree {
     		elementType.printTo(pw);
     	}
     }
-
+    
     /**
       * A generic visitor class for trees.
       */
@@ -1439,6 +1752,38 @@ public abstract class Tree {
 
         public void visitTypeArray(TypeArray that) {
             visitTree(that);
+        }
+        
+        public void visitScopy(Scopy that) {
+        	visitTree(that);
+        }
+        
+        public void visitVarIdent(VarIdent that) {
+        	visitTree(that);
+        }
+        
+        public void visitGuard(Guard that) {
+        	visitTree(that);
+        }
+        
+        public void visitArrayConstant(ArrayConstant that) {
+        	visitTree(that);
+        }
+        
+        public void visitAccessRange(AccessRange that) {
+        	visitTree(that);
+        }
+        
+        public void visitAccessDefault(AccessDefault that) {
+        	visitTree(that);
+        }
+        
+        public void visitAccessComp(AccessComp that) {
+        	visitTree(that);
+        }
+        
+        public void visitForeachStmt(ForeachStmt that) {
+        	visitTree(that);
         }
 
         public void visitTree(Tree that) {
